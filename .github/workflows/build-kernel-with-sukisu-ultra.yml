@@ -1,0 +1,92 @@
+# .github/workflows/build-kernel-with-sukisu-ultra.yml
+
+name: Build Kernel with SukiSU-Ultra
+
+on:
+  # 允许你从 Actions 标签页手动触发此工作流
+  workflow_dispatch:
+  # 当有 push 操作到 main 分支时触发
+  push:
+    branches: [ "main" ]
+
+jobs:
+  build:
+    name: Build Kernel with SukiSU-Ultra
+    runs-on: ubuntu-latest
+
+    steps:
+      # 步骤1：检出你的内核源码
+      - name: Checkout Kernel Source
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      # 步骤2：安装编译所需的依赖包
+      - name: Install Build Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+          git make clang lld libssl-dev bison flex cpio bc
+
+      # 步骤3：克隆 AOSP Clang 工具链
+      - name: Clone AOSP Clang Toolchain
+        uses: actions/checkout@v4
+        with:
+          repository: 'aosp-clang/aosp-clang'
+          path: 'clang-toolchain'
+          fetch-depth: 1
+
+      # 步骤4：集成 SukiSU-Ultra
+      # *** 这是与上次不同的关键步骤 ***
+      - name: Integrate SukiSU-Ultra
+        run: |
+          # 将 SukiSU-Ultra 的仓库添加为子模块，并存放到名为 SukiSU-Ultra 的目录中
+          git submodule add https://github.com/SukiSU-Ultra/SukiSU-Ultra.git SukiSU-Ultra
+          
+          # 在根 Makefile 中自动添加 SukiSU-Ultra 的编译入口
+          sed -i '/endif # KERNEL_HEADERS/a include SukiSU-Ultra/kernel.mk' Makefile
+          echo "SukiSU-Ultra integrated successfully."
+          
+          # 检查 Makefile 是否修改成功
+          grep "SukiSU-Ultra/kernel.mk" Makefile
+
+      # 步骤5：设置编译环境变量
+      - name: Set up Build Environment
+        run: |
+          echo "$(pwd)/clang-toolchain/bin" >> $GITHUB_PATH
+          echo "ARCH=arm64" >> $GITHUB_ENV
+          echo "KBUILD_BUILD_USER=GitHubActions" >> $GITHUB_ENV
+          echo "KBUILD_BUILD_HOST=github.com" >> $GITHUB_ENV
+          echo "CC=clang" >> $GITHUB_ENV
+          echo "LD=ld.lld" >> $GITHUB_ENV
+          echo "AR=llvm-ar" >> $GITHUB_ENV
+          echo "NM=llvm-nm" >> $GITHUB_ENV
+          echo "OBJCOPY=llvm-objcopy" >> $GITHUB_ENV
+          echo "OBJDUMP=llvm-objdump" >> $GITHUB_ENV
+          echo "STRIP=llvm-strip" >> $GITHUB_ENV
+
+      # 步骤6：配置并编译内核
+      - name: Build Kernel
+        run: |
+          # 设置内核配置文件 (请确保这是你设备对应的文件)
+          make vendor/lahaina_defconfig
+          
+          # 启用 SukiSU-Ultra 功能
+          # 注意：作为分支，它很可能沿用了原版的内核配置名 KERNELSU
+          ./scripts/config --enable KERNELSU
+          
+          # 开始编译 (内核默认使用 -O2 优化)
+          make -j$(nproc --all)
+
+      # 步骤7：打包编译产物
+      - name: Prepare Artifacts
+        run: |
+          mkdir -p ../kernel_out
+          cp arch/arm64/boot/Image ../kernel_out/
+
+      # 步骤8：上传编译产物
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Kernel-Image-with-SukiSU-Ultra
+          path: ../kernel_out/Image
