@@ -32,7 +32,7 @@ jobs:
       - name: Clone AOSP Clang Toolchain
         uses: actions/checkout@v4
         with:
-          repository: 'aosp-clang/aosp-clang'
+          repository: 'ZyC101/aosp-clang'
           path: 'clang-toolchain'
           fetch-depth: 1
 
